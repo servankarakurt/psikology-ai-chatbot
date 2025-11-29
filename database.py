@@ -1,24 +1,25 @@
-# database.py
 import sqlite3
-import json
-from datetime import datetime
 import hashlib
+from datetime import datetime
 
 DB_NAME = "psychbot.db"
 
 # --- 1. VERİTABANI KURULUMU ---
 def init_db():
-    """Tablolar yoksa oluşturur (Users, Sessions, Messages)"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     
-    # Kullanıcılar Tablosu
+    # Kullanıcılar Tablosu (Gelişmiş Profil)
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   username TEXT UNIQUE, 
-                  password_hash TEXT)''')
+                  password_hash TEXT,
+                  display_name TEXT,
+                  age INTEGER,
+                  gender TEXT,
+                  avatar TEXT)''')
     
-    # Sohbet Oturumları Tablosu (Sol menüdeki başlıklar)
+    # Sohbet Oturumları
     c.execute('''CREATE TABLE IF NOT EXISTS sessions
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   user_id INTEGER, 
@@ -26,7 +27,7 @@ def init_db():
                   created_at TIMESTAMP,
                   FOREIGN KEY(user_id) REFERENCES users(id))''')
     
-    # Mesajlar Tablosu
+    # Mesajlar
     c.execute('''CREATE TABLE IF NOT EXISTS messages
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   session_id INTEGER, 
@@ -42,27 +43,44 @@ def init_db():
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-def register_user(username, password):
+def register_user(username, password, display_name, age, gender):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     try:
-        c.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", 
-                  (username, hash_password(password)))
+        # Varsayılan avatar 'default'
+        c.execute("INSERT INTO users (username, password_hash, display_name, age, gender, avatar) VALUES (?, ?, ?, ?, ?, ?)", 
+                  (username, hash_password(password), display_name, age, gender, 'default'))
         conn.commit()
         return True
     except sqlite3.IntegrityError:
-        return False # Kullanıcı adı zaten var
+        return False
     finally:
         conn.close()
 
 def login_user(username, password):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute("SELECT id, username FROM users WHERE username=? AND password_hash=?", 
+    # Tüm profil bilgilerini çekiyoruz
+    c.execute("SELECT id, username, display_name, age, gender, avatar FROM users WHERE username=? AND password_hash=?", 
               (username, hash_password(password)))
     user = c.fetchone()
     conn.close()
-    return user # (id, username) döner veya None
+    return user # (id, username, display_name, age, gender, avatar)
+
+def update_profile(user_id, display_name, age, gender, avatar):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("UPDATE users SET display_name=?, age=?, gender=?, avatar=? WHERE id=?", 
+              (display_name, age, gender, avatar, user_id))
+    conn.commit()
+    conn.close()
+    
+    # Güncel bilgiyi geri döndür
+    c = conn.cursor()
+    c.execute("SELECT id, username, display_name, age, gender, avatar FROM users WHERE id=?", (user_id,))
+    updated_user = c.fetchone()
+    conn.close()
+    return updated_user
 
 # --- 3. SOHBET İŞLEMLERİ ---
 def create_session(user_id, title="Yeni Sohbet"):
@@ -99,5 +117,5 @@ def get_session_messages(session_id):
     conn.close()
     return messages
 
-# İlk çalıştırmada tabloları kur
+# Dosya import edildiğinde tabloları oluştur
 init_db()

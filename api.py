@@ -1,25 +1,22 @@
-# api.py
 import os
 import json
 import faiss
 import numpy as np
-from typing import List
+from typing import List, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 import ollama
 
-# --- 1. AYARLAR ---
+# --- AYARLAR ---
 VECTOR_STORE_DIR = "data/vector_store"
 MODEL_NAME = 'paraphrase-multilingual-mpnet-base-v2'
+LLM_MODEL = "llama3.1" # Senin yerel modelin
 
-# DÜZELTME: Senin modelinin adı buraya geldi
-LLM_MODEL = "llama3.1" 
+app = FastAPI(title="Psikoloji AI Chatbot API")
 
-app = FastAPI(title="Psikoloji AI Chatbot API (Local Llama 3.1)")
-
-# --- CORS İZİNLERİ ---
+# CORS İzinleri
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,101 +25,109 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global değişkenler
 embedding_model = None
 index = None
 chunk_map = None
 
-# --- 2. BAŞLATMA ---
 @app.on_event("startup")
 def load_resources():
     global embedding_model, index, chunk_map
-    print(f"⏳ Sistem başlatılıyor... Kullanılan LLM: {LLM_MODEL}")
+    print(f"⏳ Sistem başlatılıyor... LLM: {LLM_MODEL}")
     embedding_model = SentenceTransformer(MODEL_NAME)
     try:
         index = faiss.read_index(os.path.join(VECTOR_STORE_DIR, "vector_store.index"))
         with open(os.path.join(VECTOR_STORE_DIR, "chunk_map.json"), 'r', encoding='utf-8') as f:
             chunk_map = json.load(f)
-        print("✅ Veriler yüklendi. Local RAG hazır!")
+        print("✅ RAG Sistemi Hazır!")
     except Exception as e:
-        print(f"❌ HATA: {e}")
+        print(f"❌ Veri yükleme hatası: {e}")
 
-# --- 3. VERİ MODELLERİ ---
+# --- MODELLER ---
 class Message(BaseModel):
-    role: str   # "user" veya "model"
+    role: str
     content: str
+
+# Kullanıcı Profil Bilgisi
+class UserProfile(BaseModel):
+    name: str = "Kullanıcı"
+    age: int = 0
+    gender: str = "Belirtilmedi"
 
 class ChatRequest(BaseModel):
     query: str
     history: List[Message] = []
+    user_profile: Optional[UserProfile] = None # Profil opsiyonel
     k: int = 3
 
-# --- 4. RAG ENDPOINT ---
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     if not index or not chunk_map:
         raise HTTPException(status_code=500, detail="Sistem hazır değil.")
 
-    # A) RETRIEVAL (Bilgi Getirme)
+    # 1. RAG ARAMASI
     query_vector = embedding_model.encode([request.query])
-    query_vector_np = np.array(query_vector).astype('float32')
-    distances, indices = index.search(query_vector_np, request.k)
+    distances, indices = index.search(np.array(query_vector).astype('float32'), request.k)
 
     retrieved_texts = []
     sources = []
-    
     for i, idx in enumerate(indices[0]):
         if idx == -1: continue
-        chunk_file = chunk_map[idx]
         try:
+            chunk_file = chunk_map[idx]
             with open(chunk_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                text = data[0]['text']
-                source_name = os.path.basename(chunk_file).replace(".json", "")
-                retrieved_texts.append(f"- {text}")
-                sources.append(source_name)
-        except:
-            continue
+                retrieved_texts.append(f"- {data[0]['text']}")
+                sources.append(os.path.basename(chunk_file))
+        except: continue
 
     context_block = "\n".join(retrieved_texts)
 
-    # B) MESAJLARI HAZIRLAMA (Llama 3.1 İçin)
-    messages_payload = []
+    # 2. PROFİL BİLGİSİNİ PROMPT'A İŞLEME
+    profile_text = ""
+    if request.user_profile:
+        p = request.user_profile
+        gender_text = p.gender if p.gender != "Belirtilmedi" else "bilinmiyor"
+        age_text = str(p.age) if p.age > 0 else "bilinmiyor"
+        
+        profile_text = f"""
+        ŞU AN KONUŞTUĞUN KİŞİNİN PROFİLİ:
+        - Adı: {p.name}
+        - Yaşı: {age_text}
+        - Cinsiyeti: {gender_text}
+        
+        Lütfen cevabında kullanıcıya ismiyle hitap et. Yaşına ve cinsiyetine uygun, saygılı ve empatik bir dil kullan.
+        """
 
-    # 1. System Prompt (Terapist Rolü)
+    # 3. SYSTEM PROMPT
     system_prompt = f"""
-    Sen Bilişsel Davranışçı Terapi (BDT) tekniklerini uygulayan, empatik bir yapay zeka psikoloji asistanısın.
+    Sen Bilişsel Davranışçı Terapi (BDT) tekniklerini uygulayan, empatik ve profesyonel bir yapay zeka psikoloji asistanısın.
     
-    Aşağıdaki KİTAP BİLGİLERİNİ (CONTEXT) referans alarak cevap ver:
+    {profile_text}
+    
+    AŞAĞIDAKİ KİTAP BİLGİLERİNİ (CONTEXT) TEMEL AL:
     {context_block}
 
     KURALLAR:
-    1. Sohbet geçmişine bakarak tutarlı ol.
-    2. ASLA "Kitapta şöyle yazar" deme, bilgiyi sohbetin içine doğal bir şekilde yedir.
-    3. Kullanıcıya Sokratik sorular sorarak (örn: "Bu düşüncenin kanıtı ne?") farkındalık kazandır.
-    4. Empatik, sıcak ve yargısız ol.
-    5. ASLA tıbbi teşhis koyma. İntihar eğilimi sezersen 112'ye yönlendir.
+    1. Kullanıcıyı tanı, ismiyle hitap et, samimi ol.
+    2. ASLA "Kitapta şöyle yazar" deme, bilgiyi sohbetin akışına yedir.
+    3. Kullanıcıya doğrudan tavsiye vermek yerine, Sokratik sorular sorarak (örn: "Bu düşüncenin kanıtı ne?") farkındalık kazandır.
+    4. Tıbbi teşhis koyma. İntihar eğilimi sezersen 112'ye yönlendir.
     """
     
-    messages_payload.append({'role': 'system', 'content': system_prompt})
-
-    # 2. Geçmiş Sohbeti Ekle
+    # 4. OLLAMA MESAJ LİSTESİ
+    messages_payload = [{'role': 'system', 'content': system_prompt}]
+    
     for msg in request.history:
-        # Bizim modelimizde 'model' rolü var, Ollama 'assistant' istiyor.
-        ollama_role = 'assistant' if msg.role == 'model' else 'user'
-        messages_payload.append({'role': ollama_role, 'content': msg.content})
-
-    # 3. Son Soruyu Ekle
+        role = 'assistant' if msg.role == 'model' else 'user'
+        messages_payload.append({'role': role, 'content': msg.content})
+        
     messages_payload.append({'role': 'user', 'content': request.query})
 
-    # C) GENERATION (Ollama - Llama 3.1)
+    # 5. LLAMA 3 ÇAĞRISI
     try:
         response = ollama.chat(model=LLM_MODEL, messages=messages_payload)
         ai_reply = response['message']['content']
     except Exception as e:
-        ai_reply = f"Llama 3.1 Hatası: {str(e)}. (Ollama uygulamasının açık ve 'llama3.1' modelinin yüklü olduğundan emin ol)"
+        ai_reply = f"Model Hatası: {str(e)}"
 
-    return {
-        "reply": ai_reply,
-        "sources": list(set(sources))
-    }
+    return {"reply": ai_reply, "sources": list(set(sources))}
