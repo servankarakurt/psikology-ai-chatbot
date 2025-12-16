@@ -3,12 +3,10 @@ import requests
 import database as db
 import time
 
-# --- SAYFA YAPILANDIRMASI ---
 st.set_page_config(page_title="Psikoloji AI", page_icon="🧠", layout="wide")
 
 API_URL = "http://127.0.0.1:8000/chat"
 
-# --- OTURUM BAŞLATMA ---
 if "user" not in st.session_state:
     st.session_state.user = None 
 if "current_session_id" not in st.session_state:
@@ -18,20 +16,15 @@ if "messages" not in st.session_state:
 if "bg_image" not in st.session_state:
     st.session_state.bg_image = "linear-gradient(to right, #e0eafc, #cfdef3)"
 
-# --- ARKA PLAN TEMALARI (KÜTÜPHANE) ---
 THEMES = {
     "Soft Mavi (Varsayılan)": "linear-gradient(to right, #e0eafc, #cfdef3)",
     "Sıcak Bej": "linear-gradient(to right, #fdfbfb, #ebedee)",
     "Mistik Dağlar": "url('https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1920&q=80')",
     "Sakin Orman": "url('https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=1920&q=80')",
     "Huzurlu Okyanus": "url('https://images.unsplash.com/photo-1505118380757-91f5f5632de0?auto=format&fit=crop&w=1920&q=80')",
-    "Yıldızlı Gece": "url('https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?auto=format&fit=crop&w=1920&q=80')",
-    "Zen Taşları": "url('https://images.unsplash.com/photo-1499209974431-277101baf2ce?auto=format&fit=crop&w=1920&q=80')",
-    "Sıcak Günbatımı": "url('https://images.unsplash.com/photo-1472214103451-9374bd1c798e?auto=format&fit=crop&w=1920&q=80')",
-    "Yağmurlu Gün": "url('https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?auto=format&fit=crop&w=1920&q=80')"
+    "Yıldızlı Gece": "url('https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?auto=format&fit=crop&w=1920&q=80')"
 }
 
-# --- CSS STİLİ ---
 st.markdown(f"""
 <style>
     /* Ana Arka Plan */
@@ -42,15 +35,13 @@ st.markdown(f"""
         background-attachment: fixed;
     }}
 
-    /* --- GÖRÜNÜRLÜK DÜZELTMELERİ --- */
+    /* Yazı Renkleri */
     .stMarkdown, .stText, h1, h2, h3, p {{ color: #333333 !important; }}
-    .stTextInput input {{ background-color: #ffffff !important; color: #333333 !important; border: 1px solid #d1d5db; border-radius: 8px; }}
-    .stTextInput label {{ color: #4b5563 !important; font-weight: 600; }}
+    .stTextInput input {{ background-color: #ffffff !important; color: #333333 !important; border: 1px solid #d1d5db; }}
     
     /* Sidebar */
     section[data-testid="stSidebar"] {{ background-color: rgba(255, 255, 255, 0.95) !important; border-right: 1px solid #e5e7eb; }}
     section[data-testid="stSidebar"] * {{ color: #333333 !important; }}
-    section[data-testid="stSidebar"] button {{ background-color: #f3f4f6; border: 1px solid #e5e7eb; color: #333333 !important; }}
 
     /* Sohbet Balonları */
     .chat-user {{
@@ -65,31 +56,28 @@ st.markdown(f"""
         display: inline-block; font-size: 16px;
     }}
 
-    /* Login Kutusu */
-    .login-box {{
-        background-color: rgba(255, 255, 255, 0.95); padding: 40px; border-radius: 24px;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); text-align: center; margin-top: 60px; margin-bottom: 30px;
+    /* KRİZ UYARI KUTUSU CSS (YENİ) */
+    .crisis-alert {{
+        background-color: #fee2e2; 
+        color: #991b1b !important;
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 8px solid #ef4444;
+        font-weight: bold;
+        box-shadow: 0 10px 15px -3px rgba(239, 68, 68, 0.2);
+        margin: 10px 0;
+        font-size: 16px;
     }}
-    
-    .stTabs [data-baseweb="tab"] {{ color: #4b5563 !important; }}
-    .stTabs [aria-selected="true"] {{ color: #2563eb !important; border-bottom-color: #2563eb !important; }}
 </style>
 """, unsafe_allow_html=True)
 
-# --- 1. GİRİŞ SAYFASI ---
 def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("""
-        <div class='login-box'>
-            <h1 style='color:#2563eb; font-size: 3rem; margin-bottom: 0;'>🧠 Psikoloji AI</h1>
-            <p style='color:#4b5563; font-size: 1.2rem; font-style: italic; margin-top: 10px;'>
-                "İçindeki sesi duymak için, önce sessizliği dinle."
-            </p>
-            <hr style="border-top: 1px solid #e5e7eb; margin: 20px 0;">
-            <p style='color:#6b7280; font-size: 0.9rem;'>
-                Güvenli, Gizli ve Empatik Destek Alanınız.
-            </p>
+        <div style='background-color: rgba(255, 255, 255, 0.95); padding: 40px; border-radius: 24px; text-align: center; margin-top: 60px;'>
+            <h1 style='color:#2563eb; font-size: 3rem;'>🧠 Psikoloji AI</h1>
+            <p style='color:#6b7280;'>Güvenli, Gizli ve Empatik Destek Alanınız.</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -109,7 +97,6 @@ def login_page():
                     st.error("Hatalı bilgiler.")
 
         with tab2:
-            st.info("Seni daha iyi anlayabilmemiz için profilini oluştur.")
             new_user = st.text_input("Kullanıcı Adı (Giriş için)", key="reg_user")
             new_pass = st.text_input("Şifre", type="password", key="reg_pass")
             new_name = st.text_input("Görünen Adın", key="reg_name")
@@ -125,12 +112,11 @@ def login_page():
                 else:
                     st.warning("Lütfen tüm alanları doldur.")
 
-# --- 2. SOHBET SAYFASI ---
 def chat_page():
     user = st.session_state.user
     
-    # --- SIDEBAR ---
     with st.sidebar:
+        # Avatar ve Bilgi Kartı
         avatar = '👩' if user[4] == 'Kadın' else '👨' if user[4] == 'Erkek' else '👤'
         st.markdown(f"""
         <div style='text-align:center;padding:20px;background:#f3f4f6;border-radius:15px;margin-bottom:20px; border:1px solid #e5e7eb;'>
@@ -140,6 +126,7 @@ def chat_page():
         </div>
         """, unsafe_allow_html=True)
         
+        # Profil Ayarları (Eski koddan geri geldi)
         with st.expander("⚙️ Profil Ayarları"):
             new_name = st.text_input("Adın", value=user[2])
             new_age = st.number_input("Yaşın", value=user[3])
@@ -158,13 +145,10 @@ def chat_page():
                 time.sleep(0.5)
                 st.rerun()
 
-        # --- YENİ GÖRÜNÜM SEÇİCİ ---
+        # Tema Seçici (Eski koddan geri geldi)
         with st.expander("🎨 Görünüm & Atmosfer"):
-            # Temaları sözlükten alıyoruz
             selected_theme_name = st.selectbox("Bir Atmosfer Seç:", list(THEMES.keys()))
-            
             if st.button("Uygula"):
-                # Seçilen isme göre URL'yi alıp state'e kaydediyoruz
                 st.session_state.bg_image = THEMES[selected_theme_name]
                 st.rerun()
 
@@ -189,7 +173,6 @@ def chat_page():
             st.session_state.user = None
             st.rerun()
 
-    # --- SOHBET ALANI ---
     st.markdown(f"""
     <div style='text-align: center; margin-bottom: 30px;'>
         <h2 style='color: #1f2937; margin-bottom: 5px;'>Merhaba {user[2]}, seni dinliyorum.</h2>
@@ -218,6 +201,7 @@ def chat_page():
     if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
         with st.spinner("Düşünüyor..."):
             try:
+                # Profil ve Geçmiş Hazırlığı
                 prof = {"name": user[2], "age": user[3], "gender": user[4]}
                 hist = [{"role": "user" if m["role"] == "user" else "model", "content": m["content"]} for m in st.session_state.messages[:-1]]
                 
@@ -228,14 +212,22 @@ def chat_page():
                     "k": 3
                 }
                 
+            
                 response = requests.post(API_URL, json=payload)
                 if response.status_code == 200:
-                    reply = response.json()["reply"]
-                    st.markdown(f"<div style='display:flex;justify-content:flex-start;'><div style='margin-right:12px; font-size:28px; padding-top:10px;'>🧠</div><div class='chat-ai'>{reply}</div></div>", unsafe_allow_html=True)
+                    data = response.json()
+                    reply = data["reply"]
+                    is_crisis = data.get("is_crisis", False)
+
+                    if is_crisis:
+                        st.markdown(f"<div class='crisis-alert'>🚨 {reply}</div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<div style='display:flex;justify-content:flex-start;'><div style='margin-right:12px; font-size:28px; padding-top:10px;'>🧠</div><div class='chat-ai'>{reply}</div></div>", unsafe_allow_html=True)
+                    
                     st.session_state.messages.append({"role": "model", "content": reply})
                     db.save_message(st.session_state.current_session_id, "model", reply)
                 else:
-                    st.error("Sunucu Hatası.")
+                    st.error(f"Sunucu Hatası: {response.status_code}")
             except Exception as e:
                 st.error(f"Bağlantı Hatası: {e}")
 
