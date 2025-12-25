@@ -17,7 +17,7 @@ import torch
 # 🔑 API KEY AYARI
 # (Kendi anahtarını tırnak içine yapıştır)
 # ==========================================
-GEMINI_API_KEY = "AIzaSyApcEF1k1F-1gDWaKkQr5vFOkmZ3o9UEmE"
+GEMINI_API_KEY = ""
 
 # --- AYARLAR ---
 VECTOR_STORE_DIR = "data/vector_store"
